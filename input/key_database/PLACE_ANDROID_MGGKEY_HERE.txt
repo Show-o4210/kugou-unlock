@@ -1,0 +1,18 @@
+【说明】
+请在此文件夹中放入从安卓酷狗客户端导出的 MMKV 密钥数据库文件。
+
+适用客户端：
+  - 酷狗音乐        包名 com.kugou.android
+  - 酷狗音乐概念版  包名 com.kugou.android.lite
+
+手机内原始目录（需 root / 备份导出）：
+  /data/data/com.kugou.android/files/mmkv/
+  /data/data/com.kugou.android.lite/files/mmkv/
+
+常用文件名：
+  - mggkey_multi_process
+  - mggkey_multi_process.crc（可选，校验文件，可不放）
+
+※ 仅解密 .kgg（酷狗新加密）时需要此密钥库。
+※ .kgm / .kgma / .vpr 不需要密钥库。
+※ 放入后运行工具，程序会自动解析并写入 tools/kgg.key。

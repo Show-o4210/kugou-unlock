@@ -216,3 +216,21 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ===== Project-specific: secrets & user data (do NOT commit) =====
+input/key_database/*
+!input/key_database/PLACE_ANDROID_MGGKEY_HERE.txt
+input/music_files/*
+!input/music_files/PLACE_ENCRYPTED_MUSIC_HERE.txt
+output/*
+!output/.gitkeep
+tools/*
+!tools/.gitkeep
+tools/kgg.key
+tools/*.key
+
+# Local temp / helper
+*.bin
+temp_*
+Thumbs.db
+_split_modules.py
