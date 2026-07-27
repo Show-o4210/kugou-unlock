@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .audio import sniff_audio_ext
+from .audio import crypto_ext_of, encrypted_base_stem, sniff_audio_ext
 
 # KGM / VPR 文件头魔数
 KGM_MAGIC = bytes.fromhex("7cd532eb86027f4ba8afa68e0fff9914")
@@ -113,12 +113,17 @@ def _decrypt_kgm_payload(cipher_data: bytes, core_key: bytes, vpr_key: bytes | N
 
 
 def decrypt_kgm_family_file(src_path: Path, output_dir: Path) -> str:
-    """解密 .kgm / .kgma / .vpr，返回输出文件名。"""
+    """解密 .kgm / .kgma / .vpr，返回输出文件名。
+
+    文件名支持 song.kgm / song.kgma / song.vpr，以及 song.kgm.flac 等双后缀。
+    """
     src_path = Path(src_path)
     output_dir = Path(output_dir)
-    ext = src_path.suffix.lower()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = crypto_ext_of(src_path)
     if ext not in (".kgm", ".kgma", ".vpr"):
-        raise ValueError(f"Unsupported format: {ext}")
+        raise ValueError(f"Unsupported format: {src_path.suffix.lower() or '(none)'}")
 
     with open(src_path, "rb") as f:
         header = f.read(16)
@@ -162,7 +167,7 @@ def decrypt_kgm_family_file(src_path: Path, output_dir: Path) -> str:
             f"(header={plain[:8].hex()})"
         )
 
-    out_name = src_path.stem + out_ext
+    out_name = encrypted_base_stem(src_path) + out_ext
     out_path = output_dir / out_name
     out_path.write_bytes(plain)
     return out_name

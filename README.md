@@ -62,8 +62,11 @@ kugou-unlock/
 │   ├── auto.py           # 自动模式
 │   └── cli.py            # 命令行
 ├── unlock_tool.py        # 入口（双击 / 命令行）
+├── unlock_gui.py         # PySide6 图形界面入口
 ├── mggkey_to_kggkey.py   # 历史命令兼容入口
-├── run.bat               # Windows 一键运行
+├── run.bat               # Windows 一键运行（CLI 自动模式）
+├── run_gui.bat           # Windows 一键运行（GUI）
+├── requirements.txt      # GUI 依赖（PySide6）
 ├── LICENSE               # GPL-3.0
 └── README.md
 ```
@@ -76,8 +79,8 @@ kugou-unlock/
    - 加密音频 → `input/music_files/`
    - 若有 `.kgg`：将 `mggkey_multi_process` → `input/key_database/`
 2. **运行**
-   - Windows：双击 `run.bat`
-   - 或：`python unlock_tool.py`
+   - **图形界面**：`pip install -r requirements.txt` 后双击 `run_gui.bat`，或 `python unlock_gui.py`
+   - **命令行**：双击 `run.bat`，或 `python unlock_tool.py`
 3. **取结果** → `output/`
 
 ---

@@ -3,9 +3,9 @@
 更适合安卓「酷狗音乐」「酷狗音乐概念版」本地下载的歌曲。
 
 支持格式：
-  - .kgg   酷狗新加密（需要 input/key_database 中的 mggkey）
-  - .kgm   酷狗旧加密
-  - .kgma  酷狗旧加密（音频变体）
-  - .vpr   酷狗 VPR 加密
+  - .kgg / .kgg.flac / .kgg.mp3  等（酷狗新加密，需要 mggkey）
+  - .kgm / .kgma / .vpr         以及再带伪装后缀的文件名
 
-解密完成后，标准音频文件会输出到 output/ 文件夹。
+说明：部分客户端文件名类似 song.kgg.flac，工具会自动去掉多余后缀。
+解密成功后，源加密文件会从本目录删除；成品在 output/。
+进度写入 tools/progress.json，中断后再次运行会跳过已成功项。

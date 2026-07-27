@@ -6,7 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from .auto import run_auto_mode
+from .audio import collect_encrypted_files, is_kgg_file
+from .auto import run_auto_mode, run_cleanup_only
 from .kgg import decrypt_kgg_file, read_audio_hash_from_kgg
 from .keys import load_kgg_key, resolve_key_file
 from .mmkv import (
@@ -16,6 +17,7 @@ from .mmkv import (
     parse_mmkv_raw,
     write_kgg_key,
 )
+from .pipeline import default_worker_count
 from .report import format_csv_tsv, format_json, print_text_format
 
 
@@ -37,13 +39,52 @@ Examples:
   # 4. 以 JSON 查看 MMKV 内容
   python unlock_tool.py -i input/key_database/mggkey_multi_process -f json -t auto
 
-  # 5. 无参数：自动模式（扫描 input/，输出到 output/）
+  # 5. 无参数 / --auto：自动模式（多线程 + 断点续跑）
   python unlock_tool.py
+  python unlock_tool.py --auto -j 8
+
+  # 6. 仅清理工作区临时文件
+  python unlock_tool.py --cleanup
+  python unlock_tool.py --cleanup --reset-progress
         """,
     )
 
 
 def _add_arguments(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument(
+        "--auto",
+        action="store_true",
+        help="run auto mode (scan input/, write output/, multi-thread + checkpoint)",
+    )
+    ap.add_argument(
+        "-j",
+        "--workers",
+        type=int,
+        default=None,
+        metavar="N",
+        help=f"worker threads for auto mode (default: {default_worker_count()})",
+    )
+    ap.add_argument(
+        "--progress",
+        default=None,
+        metavar="PATH",
+        help="progress JSON path for resume (default: tools/progress.json)",
+    )
+    ap.add_argument(
+        "--keep-source",
+        action="store_true",
+        help="do not delete encrypted sources after successful decrypt",
+    )
+    ap.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="only clean workspace temp files (and optionally reset progress)",
+    )
+    ap.add_argument(
+        "--reset-progress",
+        action="store_true",
+        help="with --cleanup: also delete tools/progress.json",
+    )
     ap.add_argument(
         "-i",
         "--input",
@@ -136,13 +177,14 @@ def _cmd_decrypt(args: argparse.Namespace) -> int:
 
     files_to_decrypt: list[Path] = []
     if dec_path.is_file():
-        if dec_path.suffix.lower() == ".kgg":
+        if is_kgg_file(dec_path):
             files_to_decrypt.append(dec_path)
         else:
-            print(f"File {dec_path} is not a .kgg file", file=sys.stderr)
+            print(f"File {dec_path} is not a .kgg file (also accepts .kgg.flac etc.)", file=sys.stderr)
             return 1
     elif dec_path.is_dir():
-        files_to_decrypt = list(dec_path.glob("*.kgg"))
+        kgg_files, _kgm = collect_encrypted_files(dec_path)
+        files_to_decrypt = kgg_files
         if not files_to_decrypt:
             print(f"No .kgg files found in directory {dec_path}", file=sys.stderr)
             return 1
@@ -284,6 +326,16 @@ def main() -> int:
     ap = _build_parser()
     _add_arguments(ap)
     args = ap.parse_args()
+
+    if args.cleanup:
+        return run_cleanup_only(reset_progress=args.reset_progress)
+
+    if args.auto or args.workers is not None or args.progress is not None or args.keep_source:
+        return run_auto_mode(
+            workers=args.workers,
+            progress_path=args.progress,
+            remove_source=not args.keep_source,
+        )
 
     if args.decrypt is not None:
         return _cmd_decrypt(args)
