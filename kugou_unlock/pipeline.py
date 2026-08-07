@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .audio import collect_encrypted_files
+from .audio import collect_processable_files, pass_through_plain_audio
 from .cleanup import cleanup_temp_files, cleanup_workspace, remove_source_file
 from .kgg import decrypt_kgg_file, read_audio_hash_from_kgg
 from .kgm import decrypt_kgm_family_file
@@ -18,7 +18,7 @@ from .progress import ProgressStore
 @dataclass(frozen=True)
 class Job:
     path: Path
-    kind: str  # kgg | kgm
+    kind: str  # kgg | kgm | plain
 
 
 @dataclass
@@ -39,9 +39,10 @@ def default_worker_count() -> int:
 
 
 def _build_jobs(music_files_dir: Path) -> list[Job]:
-    kgg_files, kgm_files = collect_encrypted_files(music_files_dir)
+    kgg_files, kgm_files, plain_files = collect_processable_files(music_files_dir)
     jobs = [Job(path=p, kind="kgg") for p in kgg_files]
     jobs.extend(Job(path=p, kind="kgm") for p in kgm_files)
+    jobs.extend(Job(path=p, kind="plain") for p in plain_files)
     return jobs
 
 
@@ -74,23 +75,28 @@ def _process_job(
                 raise ValueError(f"EKey not found for hash {audio_hash}")
             out_path = decrypt_kgg_file(path, output_dir, ekey_str, quiet=True)
             out_name = Path(out_path).name if out_path else None
-        else:
+        elif kind == "kgm":
             out_name = decrypt_kgm_family_file(path, output_dir)
+        elif kind == "plain":
+            out_name = pass_through_plain_audio(path, output_dir)
+        else:
+            raise ValueError(f"Unknown job kind: {kind}")
 
         progress.mark(path, kind=kind, status="success", output=out_name, error=None)
 
+        action = "Copied" if kind == "plain" else "Decrypted"
         if remove_source:
             if remove_source_file(path):
                 with log_lock:
-                    log(f"    [+] {path.name} -> output/{out_name}")
+                    log(f"    [+] {action}: {path.name} -> output/{out_name}")
                     log(f"    [-] Removed source: {path.name}")
             else:
                 with log_lock:
-                    log(f"    [+] {path.name} -> output/{out_name}")
+                    log(f"    [+] {action}: {path.name} -> output/{out_name}")
                     log(f"    [!] Could not remove source: {path.name}")
         else:
             with log_lock:
-                log(f"    [+] {path.name} -> output/{out_name}")
+                log(f"    [+] {action}: {path.name} -> output/{out_name}")
 
         return JobResult(path=path, kind=kind, ok=True, output_name=out_name)
 
@@ -98,7 +104,8 @@ def _process_job(
         err = str(e)
         progress.mark(path, kind=kind, status="failed", error=err)
         with log_lock:
-            log(f"    [!] Error decrypting {path.name}: {err}")
+            verb = "copying" if kind == "plain" else "decrypting"
+            log(f"    [!] Error {verb} {path.name}: {err}")
         return JobResult(path=path, kind=kind, ok=False, error=err)
 
 
@@ -136,11 +143,18 @@ def run_pipeline(
     jobs = _build_jobs(music_files_dir)
     total = len(jobs)
     if total == 0:
-        log("[*] No encrypted files found.")
+        log("[*] No processable audio files found.")
         return 0, 0, 0, 0
 
-    log(f"[*] Found {total} encrypted file(s). Workers={workers}, progress={progress.path_str()}")
-    if any(j.kind == "kgg" for j in jobs) and not key_mapping:
+    n_kgg = sum(1 for j in jobs if j.kind == "kgg")
+    n_kgm = sum(1 for j in jobs if j.kind == "kgm")
+    n_plain = sum(1 for j in jobs if j.kind == "plain")
+    log(
+        f"[*] Found {total} file(s) "
+        f"(kgg={n_kgg}, kgm={n_kgm}, plain={n_plain}). "
+        f"Workers={workers}, progress={progress.path_str()}"
+    )
+    if n_kgg and not key_mapping:
         log("[!] Warning: No key mapping loaded. .kgg files may fail to decrypt.")
 
     log_lock = threading.Lock()

@@ -42,9 +42,10 @@ MUSIC_GUIDE = (
     "支持格式：\n"
     "  - .kgg / .kgg.flac / .kgg.mp3  等（酷狗新加密，需要 mggkey）\n"
     "  - .kgm / .kgma / .vpr         以及再带伪装后缀的文件名\n"
+    "  - .flac / .mp3 / .m4a 等      已是明文的标准音频（透传拷贝到 output/）\n"
     "\n"
     "说明：部分客户端文件名类似 song.kgg.flac，工具会自动去掉多余后缀。\n"
-    "解密成功后，源加密文件会从本目录删除；成品在 output/。\n"
+    "处理成功后，源文件会从本目录删除；成品在 output/。\n"
     "进度写入 tools/progress.json，中断后再次运行会跳过已成功项。\n"
 )
 
@@ -74,22 +75,51 @@ def extract_keys_from_mmkv(
     tools_dir: Path,
     log: LogFn | None = None,
 ) -> Path | None:
-    """从 mggkey 提取并写出 tools/kgg.key，返回路径（若无有效库则 None）。"""
+    """从 key_database 下所有有效 MMKV 提取并写出 tools/kgg.key。
+
+    合并策略：同一 hash 若出现多次，保留更长的 ekey 字符串（更可能是完整 RC4 密钥）。
+    """
     _log = log or print
-    mmkv_files = [p for p in key_db_dir.glob("*") if is_valid_mmkv(p)]
+    mmkv_files = [p for p in sorted(key_db_dir.glob("*")) if is_valid_mmkv(p)]
     if not mmkv_files:
         return None
-    _log(f"[*] Found {len(mmkv_files)} MMKV key database(s). Extracting keys...")
+    _log(f"[*] Found {len(mmkv_files)} MMKV file(s). Extracting keys...")
     flat_map: dict[str, str] = {}
+    useful = 0
     for f in mmkv_files:
         raw_map = parse_mmkv_raw(f)
-        if raw_map:
-            for k, v in raw_map.items():
-                _v_type, v_val = decode_value(v, "nested_string")
-                flat_map[k] = str(v_val)
+        if not raw_map:
+            _log(f"    [-] {f.name}: empty / unreadable")
+            continue
+        before = len(flat_map)
+        added = 0
+        for k, v in raw_map.items():
+            _v_type, v_val = decode_value(v, "nested_string")
+            s = str(v_val)
+            # 像 32 位 hex 的 audio hash 才当作解密密钥条目
+            is_hash = len(k) == 32 and all(c in "0123456789abcdefABCDEF" for c in k)
+            if not is_hash:
+                continue
+            prev = flat_map.get(k)
+            if prev is None or len(s) > len(prev):
+                if prev is None:
+                    added += 1
+                flat_map[k] = s
+        after = len(flat_map)
+        if added or after > before:
+            useful += 1
+            _log(f"    [+] {f.name}: +{added} keys (map size now {after})")
+        else:
+            _log(f"    [.] {f.name}: {len(raw_map)} entry(ies), no audio-hash ekeys")
+    if not flat_map:
+        _log("[!] No audio ekeys found in any MMKV file (need mggkey_multi_process).")
+        return None
     out_key_path = tools_dir / "kgg.key"
     write_kgg_key(flat_map, out_key_path)
-    _log(f"[+] Extracted keys to {out_key_path} ({out_key_path.stat().st_size} bytes)")
+    _log(
+        f"[+] Extracted keys to {out_key_path} "
+        f"({out_key_path.stat().st_size} bytes, {len(flat_map)} hashes from {useful} file(s))"
+    )
     return out_key_path
 
 
@@ -149,16 +179,16 @@ def run_auto_mode(
     )
 
     if total == 0:
-        _log("    Please place your files (.kgg, .kgg.flac, .kgm, .kgma, .vpr, ...) and run again.")
+        _log("    Please place your files (.kgg, .kgg.flac, .kgm, .kgma, .vpr, .flac, .mp3, ...) and run again.")
         _log("====================================================")
         return 0
 
     _log("====================================================")
     _log(f"[+] All done! total={total} success={success} skipped={skipped} failed={failed}")
-    _log("    Check the 'output/' folder for your decrypted audio.")
+    _log("    Check the 'output/' folder for your audio.")
     _log(f"    Progress file: {progress_path}")
     if remove_source and success:
-        _log("    Successfully decrypted sources were removed from input/music_files/.")
+        _log("    Successfully processed sources were removed from input/music_files/.")
     _log("====================================================")
     return 0 if failed == 0 else 1
 

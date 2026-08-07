@@ -28,7 +28,7 @@ def _now_iso() -> str:
 @dataclass
 class FileRecord:
     status: str  # pending | success | failed | skipped
-    kind: str  # kgg | kgm
+    kind: str  # kgg | kgm | plain
     src_name: str
     size: int = 0
     mtime: float = 0.0
