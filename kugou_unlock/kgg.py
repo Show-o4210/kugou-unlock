@@ -51,6 +51,22 @@ def decrypt_kgg_file(src_path, dest_dir, ekey_str, *, quiet: bool = False):
             if not dec:
                 raise ValueError(f"Failed to create QMC2 decryptor from ekey of {src_path.name}")
 
+            # KuGou has emitted two MAP-cipher shift variants.  Prefer the
+            # conventional rotate used by existing files, then fall back to
+            # the historical reference implementation only when its probe
+            # produces a recognized audio header.
+            f.seek(header_len)
+            probe = bytearray(f.read(12))
+            dec.decrypt(probe, 0)
+            if not sniff_audio_ext(probe):
+                compat_dec = create_qmc2(ekey_str, legacy_map=True)
+                if compat_dec:
+                    f.seek(header_len)
+                    compat_probe = bytearray(f.read(12))
+                    compat_dec.decrypt(compat_probe, 0)
+                    if sniff_audio_ext(compat_probe):
+                        dec = compat_dec
+
             f.seek(header_len)
             offset = 0
 

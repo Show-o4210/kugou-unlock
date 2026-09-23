@@ -47,13 +47,19 @@ def decrypt_ekey(ekey_str):
 # --- QMC2 Decryption Ciphers ---
 
 class QMC2Map:
-    def __init__(self, key):
+    def __init__(self, key, *, same_shift: bool = False):
         self.key = bytearray(128)
         n = len(key)
         for i in range(128):
             j = (i * i + 71214) % n
             shift = (j + 4) % 8
-            val = ((key[j] << shift) | (key[j] >> (8 - shift))) & 0xFF
+            # Most files use a normal 8-bit rotate.  Some KuGou KGG files
+            # were produced with the historical reference implementation,
+            # whose second shift operand is ``shift`` as well.  The caller
+            # probes the decrypted audio header and selects that compatibility
+            # variant only when the normal form does not yield valid audio.
+            right_shift = shift if same_shift else (8 - shift)
+            val = ((key[j] << shift) | (key[j] >> right_shift)) & 0xFF
             self.key[i] = val
 
     def decrypt(self, buf, offset):
@@ -153,12 +159,12 @@ def get_segment_key(hash_val, segment_id, seed):
         return 0
     return int((hash_val / (float(seed) * float(segment_id + 1))) * 100.0)
 
-def create_qmc2(ekey_str):
+def create_qmc2(ekey_str, *, legacy_map: bool = False):
     key = decrypt_ekey(ekey_str)
     if not key:
         return None
     if len(key) < 300:
-        return QMC2Map(key)
+        return QMC2Map(key, same_shift=legacy_map)
     return QMC2RC4(key)
 
 

@@ -13,7 +13,7 @@ KGM_FAMILY_EXTS = frozenset({".kgm", ".kgma", ".vpr"})
 KGM_MAGIC = bytes.fromhex("7cd532eb86027f4ba8afa68e0fff9914")
 VPR_MAGIC = bytes.fromhex("0528bc96e9e45a4391aabdd07af53631")
 
-# 部分客户端会把真实后缀再拼在加密后缀后面，例如 song.kgg.flac
+# 部分客户端会在加密后缀后继续拼接质量、容器或备份后缀。
 AUDIO_DISGUISE_EXTS = frozenset({
     ".flac", ".mp3", ".ogg", ".m4a", ".wav", ".aac", ".ape", ".wma", ".opus",
 })
@@ -109,63 +109,54 @@ def _lower_suffixes(path: Path) -> list[str]:
 def crypto_ext_of(path: Path | str) -> str | None:
     """返回识别到的加密后缀（小写），如 '.kgg' / '.kgm'；无法识别则 None。
 
-    支持：
-      - song.kgg / song.kgm / song.kgma / song.vpr
-      - song.kgg.flac / song.kgm.mp3 等「加密后缀 + 伪装音频后缀」
+    加密后缀不必位于末尾。例如 song.kgg.flac、song.kgg.flac.bak 和
+    song.kgm.custom 都能识别。存在多个候选时取最靠右者。
     """
     suffixes = _lower_suffixes(Path(path))
     if not suffixes:
         return None
-    if suffixes[-1] in CRYPTO_EXTS:
-        return suffixes[-1]
-    if (
-        len(suffixes) >= 2
-        and suffixes[-2] in CRYPTO_EXTS
-        and suffixes[-1] in AUDIO_DISGUISE_EXTS
-    ):
-        return suffixes[-2]
+    for suffix in reversed(suffixes):
+        if suffix in CRYPTO_EXTS:
+            return suffix
     return None
 
 
 def is_kgg_file(path: Path | str) -> bool:
-    return crypto_ext_of(path) in KGG_EXTS
+    return detect_process_kind(path) == "kgg"
 
 
 def is_kgm_family_file(path: Path | str) -> bool:
-    return crypto_ext_of(path) in KGM_FAMILY_EXTS
+    return detect_process_kind(path) == "kgm"
 
 
 def encrypted_base_stem(path: Path | str) -> str:
-    """去掉加密后缀及可选的伪装音频后缀，得到输出用的基名。
+    """从最靠右的加密后缀起去掉全部后缀，得到输出用的基名。
 
     例：
       song.kgg           -> song
       song.kgg.flac      -> song
       a.b.kgma           -> a.b
       a.b.kgm.mp3        -> a.b
+      a.b.kgg.flac.bak   -> a.b
+      a.b.kgm.custom     -> a.b
     """
     p = Path(path)
     suffixes = _lower_suffixes(p)
-    n_strip = 0
     if not suffixes:
         return p.name
-    if suffixes[-1] in CRYPTO_EXTS:
-        n_strip = 1
-    elif (
-        len(suffixes) >= 2
-        and suffixes[-2] in CRYPTO_EXTS
-        and suffixes[-1] in AUDIO_DISGUISE_EXTS
-    ):
-        n_strip = 2
-    else:
+    crypto_index = next(
+        (
+            index
+            for index in range(len(suffixes) - 1, -1, -1)
+            if suffixes[index] in CRYPTO_EXTS
+        ),
+        None,
+    )
+    if crypto_index is None:
         return p.stem
 
-    name = p.name
-    for _ in range(n_strip):
-        dot = name.rfind(".")
-        if dot <= 0:
-            break
-        name = name[:dot]
+    tail = "".join(p.suffixes[crypto_index:])
+    name = p.name[: -len(tail)] if tail else p.name
     return name or p.stem
 
 
@@ -182,7 +173,7 @@ def is_plain_audio_file(path: Path | str) -> bool:
 
 
 def collect_encrypted_files(directory: Path | str) -> tuple[list[Path], list[Path]]:
-    """扫描目录，返回 (kgg_files, kgm_family_files)。"""
+    """按文件头优先扫描目录，返回 (kgg_files, kgm_family_files)。"""
     directory = Path(directory)
     kgg_files: list[Path] = []
     kgm_files: list[Path] = []
@@ -191,10 +182,10 @@ def collect_encrypted_files(directory: Path | str) -> tuple[list[Path], list[Pat
     for p in sorted(directory.iterdir()):
         if not p.is_file():
             continue
-        kind = crypto_ext_of(p)
-        if kind in KGG_EXTS:
+        kind = detect_process_kind(p)
+        if kind == "kgg":
             kgg_files.append(p)
-        elif kind in KGM_FAMILY_EXTS:
+        elif kind == "kgm":
             kgm_files.append(p)
     return kgg_files, kgm_files
 

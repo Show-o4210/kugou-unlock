@@ -6,8 +6,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from .audio import collect_encrypted_files, is_kgg_file
+from .audio import collect_encrypted_files, detect_process_kind
 from .auto import run_auto_mode, run_cleanup_only
+from .enrich import run_enrichment
 from .kgg import decrypt_kgg_file, read_audio_hash_from_kgg
 from .keys import load_kgg_key, resolve_key_file
 from .mmkv import (
@@ -23,7 +24,7 @@ from .report import format_csv_tsv, format_json, print_text_format
 
 def _build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
-        description="酷狗音乐本地解密工具：MMKV 密钥提取 + .kgg/.kgm/.kgma/.vpr 解密。",
+        description="酷狗音乐本地工具：密钥提取、音频解密、手动导出数据的歌词/封面补全。",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -46,6 +47,9 @@ Examples:
   # 6. 仅清理工作区临时文件
   python unlock_tool.py --cleanup
   python unlock_tool.py --cleanup --reset-progress
+
+  # 7. 用手动导出的 Android 数据补全歌词与封面
+  python unlock_tool.py --enrich --metadata-db input/metadata/kugou_music_phone_v7.db --lyrics-dir input/metadata/lyrics
         """,
     )
 
@@ -84,6 +88,40 @@ def _add_arguments(ap: argparse.ArgumentParser) -> None:
         "--reset-progress",
         action="store_true",
         help="with --cleanup: also delete tools/progress.json",
+    )
+    ap.add_argument(
+        "--enrich",
+        action="store_true",
+        help="add LRC, cover art, and tags from manually exported Android data",
+    )
+    ap.add_argument(
+        "--audio-dir",
+        default="output",
+        metavar="DIR",
+        help="audio directory for --enrich (default: output)",
+    )
+    ap.add_argument(
+        "--metadata-db",
+        default=None,
+        metavar="PATH",
+        help="manually exported KuGou SQLite database for --enrich",
+    )
+    ap.add_argument(
+        "--lyrics-dir",
+        default=None,
+        metavar="DIR",
+        help="manually exported KRC cache directory for --enrich",
+    )
+    ap.add_argument(
+        "--cover-cache",
+        default="tools/cover_cache",
+        metavar="DIR",
+        help="download cache for --enrich covers (default: tools/cover_cache)",
+    )
+    ap.add_argument(
+        "--external-only",
+        action="store_true",
+        help="with --enrich: create same-name LRC/cover files without editing audio tags",
     )
     ap.add_argument(
         "-i",
@@ -177,10 +215,13 @@ def _cmd_decrypt(args: argparse.Namespace) -> int:
 
     files_to_decrypt: list[Path] = []
     if dec_path.is_file():
-        if is_kgg_file(dec_path):
+        if detect_process_kind(dec_path) == "kgg":
             files_to_decrypt.append(dec_path)
         else:
-            print(f"File {dec_path} is not a .kgg file (also accepts .kgg.flac etc.)", file=sys.stderr)
+            print(
+                f"File {dec_path} is not recognized as KGG by header or filename",
+                file=sys.stderr,
+            )
             return 1
     elif dec_path.is_dir():
         kgg_files, _kgm = collect_encrypted_files(dec_path)
@@ -210,6 +251,31 @@ def _cmd_decrypt(args: argparse.Namespace) -> int:
         f"{success_count}/{len(files_to_decrypt)} file(s)"
     )
     return 0 if success_count == len(files_to_decrypt) else 1
+
+
+def _cmd_enrich(args: argparse.Namespace) -> int:
+    if not args.metadata_db or not args.lyrics_dir:
+        print(
+            "--enrich requires --metadata-db and --lyrics-dir; "
+            "export both from Android manually first",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        total, ok, failures = run_enrichment(
+            args.audio_dir,
+            args.lyrics_dir,
+            args.metadata_db,
+            args.cover_cache,
+            external_only=args.external_only,
+        )
+    except Exception as exc:
+        print(f"Enrichment failed: {exc}", file=sys.stderr)
+        return 1
+    print(f"[=] enriched={ok} total={total} failed={len(failures)}")
+    for failure in failures:
+        print(f"[!] {failure}", file=sys.stderr)
+    return 0 if not failures else 1
 
 
 def _cmd_mmkv(args: argparse.Namespace) -> int:
@@ -329,6 +395,9 @@ def main() -> int:
 
     if args.cleanup:
         return run_cleanup_only(reset_progress=args.reset_progress)
+
+    if args.enrich:
+        return _cmd_enrich(args)
 
     if args.auto or args.workers is not None or args.progress is not None or args.keep_source:
         return run_auto_mode(
