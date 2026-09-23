@@ -18,6 +18,9 @@ com.kugou.android.lite。
 | KRC 歌词 | /sdcard/Android/data/com.kugou.android/files/kugou/lyrics/ | /sdcard/Android/data/com.kugou.android.lite/files/kugou/lyrics/ | 用于生成同名 LRC |
 | 歌曲数据库 | /data/user/0/com.kugou.android/databases/kugou_music_phone_v7.db | /data/user/0/com.kugou.android.lite/databases/kugou_music_phone_v7.db | 用于匹配歌曲和封面；文件名可能随版本变化 |
 
+部分 root 文件管理器会把应用私有目录显示为 /data/data/包名/；在常见 Android
+系统中它与表内的 /data/user/0/包名/ 指向同一位置。
+
 先关闭酷狗再导出数据库；若数据库旁存在同名 -wal 或 -shm，也应一起导出。工具不会
 自动取得 root、连接 ADB 或修改手机端文件。完整导出命令见“歌词与封面”一节。
 
