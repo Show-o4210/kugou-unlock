@@ -1,10 +1,22 @@
 # 酷狗音乐本地解密工具
 
-纯 Python 的酷狗加密音频解密工具。核心解密离线运行、仅使用标准库；可选的
-歌词/封面标签写入功能使用 mutagen。
+酷狗加密音频的本地解密工具，现同时提供 Python 桌面版和原生 Android 版。两端核心
+处理均离线运行；Python 核心仅使用标准库，可选的歌词/封面标签写入功能使用 mutagen。
 
 更适合安卓端“酷狗音乐”或“酷狗音乐概念版”本地下载的歌曲。本工具仅用于处理
 你本人合法持有的本地文件。
+
+## 两端版本
+
+| 版本 | 位置 | 适用场景 |
+|---|---|---|
+| Python 桌面版 | 仓库根目录与 `kugou_unlock/` | 在电脑上批量处理、歌词/封面补全和标签写入 |
+| Android 原生版 | `android/` | 在已 root 的 Android 虚拟机中就地处理本地下载文件 |
+
+Android 版不申请联网、传统存储或所有文件访问权限。首次声明同意后，它可以通过 `su`
+只读加载文档列出的默认歌曲目录和用户自己的密钥；路径可以手动修改。应用不提供、下载、
+分享或维护公共密钥。Android 版的完整使用说明与测试边界见
+[`android/README.md`](android/README.md) 和 [`android/TEST_REPORT.md`](android/TEST_REPORT.md)。
 
 ## 先看：安卓资源路径速查
 
@@ -44,6 +56,10 @@ KGM、KGMA、VPR 不依赖 mggkey。
 
 ~~~text
 kugou-unlock/
+├── android/               # 原生 Android / Jetpack Compose 版本
+│   ├── app/src/           # Kotlin 源码、资源与测试
+│   ├── gradle/            # Gradle Wrapper 与版本目录
+│   └── README.md          # Android 使用与安全边界
 ├── input/
 │   ├── key_database/       # 手动导出的 mggkey
 │   ├── music_files/        # 待处理音频
@@ -64,6 +80,23 @@ kugou-unlock/
 ├── enrich_from_android.py  # 补全功能的兼容入口
 └── APK_DEVELOPMENT_GUIDE.md
 ~~~
+
+## Android 版构建
+
+使用 Android Studio 打开 `android/`，或在已配置 Android SDK 与 JDK 17 的环境中运行：
+
+~~~powershell
+cd android
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug
+~~~
+
+生成的调试 APK 位于 `android/app/build/outputs/apk/debug/app-debug.apk`。APK 构建产物不
+提交到 Git 历史；对外分发时建议放入 GitHub Release，并同时公布 SHA-256。Android 要求
+所有可安装 APK 都带签名，调试构建会自动使用调试密钥；如需保证以后能够覆盖升级，应
+长期保存同一签名密钥。
+
+Windows 下建议把仓库 clone 到只含英文字符的路径。Android Gradle 可以通过项目配置在
+中文路径完成编译，但部分 Gradle 测试工作进程仍可能无法正确处理非 ASCII 类路径。
 
 ## 快速使用
 
